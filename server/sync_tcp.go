@@ -1,20 +1,22 @@
 package server
 
 import (
+	"fmt"
 	"io"
 	"log"
 	"net"
 	"strconv"
+	"strings"
 
 	"github.com/knightfall22/wumi/config"
+	"github.com/knightfall22/wumi/core"
 )
 
 func RunSyncTCPServer() {
-	log.Println("Starting synchronous server on", config.Host, config.Port)
+	address := net.JoinHostPort(config.Host, strconv.Itoa(config.Port))
+	log.Println("Starting synchronous server on", address)
 
 	var con_client = 0
-
-	address := net.JoinHostPort(config.Host, strconv.Itoa(config.Port))
 
 	//listening to configed host:port
 	lnr, err := net.Listen("tcp", address)
@@ -47,26 +49,35 @@ func RunSyncTCPServer() {
 			}
 
 			log.Println("command", cmd)
-			if err := response(cmd, c); err != nil {
-				log.Println("err write", err)
-			}
+			response(cmd, c)
 		}
 	}
 }
 
-func readCommand(c net.Conn) (string, error) {
+func readCommand(c io.ReadWriter) (*core.RedisCmd, error) {
 	buf := make([]byte, 521)
 	n, err := c.Read(buf[:])
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	return string(buf[:n]), nil
+	tokens, err := core.DecodeArrayString(buf[:n])
+	if err != nil {
+		return nil, err
+	}
+
+	return &core.RedisCmd{
+		Cmd:  strings.ToUpper(tokens[0]),
+		Args: tokens[1:],
+	}, nil
 }
 
-func response(cmd string, c net.Conn) error {
-	if _, err := c.Write([]byte(cmd)); err != nil {
-		return err
+func response(cmd *core.RedisCmd, c io.ReadWriter) {
+	if err := core.EvalAndRespond(cmd, c); err != nil {
+		respondError(err, c)
 	}
-	return nil
+}
+
+func respondError(err error, c io.ReadWriter) {
+	fmt.Fprintf(c, "-%s\r\n", err)
 }
