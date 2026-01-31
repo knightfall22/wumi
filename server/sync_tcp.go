@@ -79,5 +79,6 @@ func response(cmd *core.RedisCmd, c io.ReadWriter) {
 }
 
 func respondError(err error, c io.ReadWriter) {
+	log.Println("error", err)
 	fmt.Fprintf(c, "-%s\r\n", err)
 }
