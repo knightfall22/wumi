@@ -12,6 +12,7 @@ func setupFlags() {
 	flag.StringVar(&config.Host, "host", "0.0.0.0", "host for server")
 	flag.IntVar(&config.Port, "port", 7379, "port for server")
 	flag.IntVar(&config.KeyLimit, "key-limit", 10000, "key limit for set command")
+	flag.StringVar(&config.AOFFILE, "aof", "./wumi-afile.aof", "name of aof file")
 	flag.Parse()
 }
 

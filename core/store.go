@@ -6,22 +6,18 @@ import (
 	"github.com/knightfall22/wumi/config"
 )
 
-type Obj struct {
-	Value     any
-	ExpiresAt int64
-}
-
 var store = make(map[string]*Obj)
 
-func NewObj(v any, durationMs int64) *Obj {
+func NewObj(v any, durationMs int64, oType, oEnc uint8) *Obj {
 	var expiresAt int64 = -1
 	if durationMs > 0 {
 		expiresAt = time.Now().UnixMilli() + durationMs
 	}
 
 	return &Obj{
-		Value:     v,
-		ExpiresAt: expiresAt,
+		Value:        v,
+		TypeEncoding: oType | oEnc,
+		ExpiresAt:    expiresAt,
 	}
 }
 
