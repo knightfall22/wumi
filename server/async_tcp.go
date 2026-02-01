@@ -1,10 +1,12 @@
 package server
 
 import (
+	"fmt"
 	"log"
 	"net"
 	"strconv"
 	"syscall"
+	"time"
 
 	"github.com/knightfall22/wumi/config"
 	"github.com/knightfall22/wumi/core"
@@ -12,11 +14,14 @@ import (
 
 var conn_clients int
 
+var cronFrequency time.Duration = 1 * time.Second
+var lastCronExecTime time.Time = time.Now()
+
 func RunASyncTCPServer() error {
 	address := net.JoinHostPort(config.Host, strconv.Itoa(config.Port))
 	log.Println("Starting asynchronous server on", address)
 
-	max_clients := 20000
+	max_clients := 1000
 
 	//Create EPOLL even object to hold events
 	var events []syscall.EpollEvent = make([]syscall.EpollEvent, max_clients)
@@ -71,13 +76,19 @@ func RunASyncTCPServer() error {
 	}
 
 	for {
+		if time.Now().After(lastCronExecTime.Add(cronFrequency)) {
+			core.DeleteExpiredKeys()
+			lastCronExecTime = time.Now()
+		}
+
 		//see if any FD is ready for an IO
 		nevents, err := syscall.EpollWait(epollFD, events[:], -1)
 		if err != nil {
 			continue
 		}
 
-		for i := range nevents {
+		for i := 0; i < nevents; i++ {
+			fmt.Println("conn_clients", conn_clients)
 			//check if the socket itself is ready for an IO
 			if int(events[i].Fd) == serverFD {
 				//accept incoming request from a server
@@ -105,14 +116,17 @@ func RunASyncTCPServer() error {
 					Fd: int(events[i].Fd),
 				}
 
-				cmd, err := readCommand(comm)
+				cmds, err := readCommands(comm)
 				if err != nil {
+					if err := syscall.EpollCtl(epollFD, syscall.EPOLL_CTL_DEL, int(events[i].Fd), nil); err != nil {
+						log.Println("Error removing fd from epoll:", err)
+					}
 					syscall.Close(int(events[i].Fd))
 					conn_clients--
 					continue
 				}
 
-				response(cmd, comm)
+				response(cmds, comm)
 			}
 		}
 	}

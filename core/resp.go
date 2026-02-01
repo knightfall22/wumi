@@ -5,30 +5,44 @@ import (
 	"fmt"
 )
 
-func Decode(data []byte) (any, error) {
+func Decode(data []byte) ([]any, error) {
 	if len(data) == 0 {
 		return nil, errors.New("no data")
 	}
 
-	value, _, err := DecodeOne(data)
-	return value, err
-}
+	values := make([]any, 0)
+	idx := 0
 
-func DecodeArrayString(data []byte) ([]string, error) {
-	value, err := Decode(data)
-	if err != nil {
-		return nil, err
+	for idx < len(data) {
+		value, delta, err := DecodeOne(data[idx:])
+		if err != nil {
+			return nil, err
+		}
+
+		idx += delta
+		values = append(values, value)
 	}
 
-	ts := value.([]any)
-	tokens := make([]string, len(ts))
+	fmt.Printf("Values %+v\r\n", values)
 
-	for i := range tokens {
-		tokens[i] = ts[i].(string)
-	}
-
-	return tokens, nil
+	return values, nil
 }
+
+// func DecodeArrayString(data []byte) ([]string, error) {
+// 	value, err := Decode(data)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+
+// 	ts := value.([]any)
+// 	tokens := make([]string, len(ts))
+
+// 	for i := range tokens {
+// 		tokens[i] = ts[i].(string)
+// 	}
+
+// 	return tokens, nil
+// }
 
 func DecodeOne(data []byte) (any, int, error) {
 	if len(data) == 0 {
@@ -143,9 +157,12 @@ func Encode(value any, isSimple bool) []byte {
 		}
 
 		return []byte(fmt.Sprintf("$%d\r\n%s\r\n", len(v), v))
-	case int64:
+	case int, int8, int16, int32, int64:
 		return []byte(fmt.Sprintf(":%d\r\n", v))
+
+	case error:
+		return []byte(fmt.Sprintf("-%s\r\n", v.Error()))
 	}
 
-	return []byte{}
+	return RESP_NIL
 }

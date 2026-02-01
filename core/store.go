@@ -2,6 +2,8 @@ package core
 
 import (
 	"time"
+
+	"github.com/knightfall22/wumi/config"
 )
 
 type Obj struct {
@@ -24,9 +26,28 @@ func NewObj(v any, durationMs int64) *Obj {
 }
 
 func PUT(k string, object *Obj) {
+	if len(store) >= config.KeyLimit {
+		evict()
+	}
 	store[k] = object
 }
 
 func GET(k string) *Obj {
-	return store[k]
+	v := store[k]
+
+	if v != nil {
+		if v.ExpiresAt != -1 && v.ExpiresAt <= time.Now().UnixMilli() {
+			delete(store, k)
+			return nil
+		}
+	}
+	return v
+}
+
+func DEL(k string) bool {
+	if _, ok := store[k]; ok {
+		delete(store, k)
+		return true
+	}
+	return false
 }
