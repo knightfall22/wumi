@@ -24,8 +24,6 @@ func Decode(data []byte) ([]any, error) {
 		values = append(values, value)
 	}
 
-	fmt.Printf("Values %+v\r\n", values)
-
 	return values, nil
 }
 

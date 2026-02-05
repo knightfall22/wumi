@@ -83,7 +83,7 @@ func evalGet(args []string) []byte {
 	}
 
 	//if the key as already expired return nil
-	if obj.ExpiresAt != -1 && obj.ExpiresAt <= time.Now().UnixMilli() {
+	if hasExpired(obj) {
 		return RESP_NIL
 	}
 
@@ -107,13 +107,14 @@ func evalTTL(args []string) []byte {
 	}
 
 	// if key does exist but ttl is not set return RESP encoded -1
-	if obj.ExpiresAt == -1 {
+	exp, hasExpired := getExpiry(obj)
+	if !hasExpired {
 		return RESP_MINUS_ONE
 	}
 
 	//compute the time remaining for the key to expire and
 	//return the RESP encodedd form of it
-	durationMs := obj.ExpiresAt - time.Now().UnixMilli()
+	durationMs := exp - time.Now().UnixMilli()
 
 	//if the key is expired return -2
 	if durationMs <= 0 {
@@ -156,9 +157,7 @@ func evalExpire(args []string) []byte {
 		return Encode(errors.New("(error) ERR value is not an integer or out of range"), false)
 	}
 
-	expireMs := exDurationSec * 1000
-
-	obj.ExpiresAt = expireMs + time.Now().UnixMilli()
+	setExpiry(obj, exDurationSec*1000)
 
 	return RESP_ONE
 }
@@ -181,7 +180,6 @@ func evalINCR(args []string) []byte {
 		PUT(key, obj)
 	}
 
-	fmt.Println(obj)
 	if err := assertType(obj.TypeEncoding, OBJ_TYPE_STRING); err != nil {
 		return Encode(err, false)
 	}
@@ -194,6 +192,26 @@ func evalINCR(args []string) []byte {
 	i++
 	obj.Value = strconv.FormatInt(i, 10)
 	return Encode(i, false)
+}
+
+func evalINFO() []byte {
+	var info []byte
+	buf := bytes.NewBuffer(info)
+	buf.WriteString("# Keyspace\r\n")
+
+	for i := range KeyspaceStat {
+		fmt.Fprintf(buf, "db%d:keys=%d,expires=0,avg_ttl=0\r\n", i, KeyspaceStat[i]["keys"])
+	}
+
+	return Encode(buf.String(), false)
+}
+
+func evalCLIENT() []byte {
+	return RESP_OK
+}
+
+func evalLATENCY() []byte {
+	return Encode([]string{}, false)
 }
 
 func EvalAndRespond(cmds RedisCmds, c io.ReadWriter) error {
@@ -218,6 +236,12 @@ func EvalAndRespond(cmds RedisCmds, c io.ReadWriter) error {
 			buf.Write(evalBGREWRITEAOF())
 		case "INCR":
 			buf.Write(evalINCR(cmd.Args))
+		case "INFO":
+			buf.Write(evalINFO())
+		case "CLIENT":
+			buf.Write(evalCLIENT())
+		case "LATENCY":
+			buf.Write(evalLATENCY())
 		default:
 			buf.Write(evalPING(cmd.Args))
 		}

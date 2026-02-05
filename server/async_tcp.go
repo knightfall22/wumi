@@ -1,7 +1,6 @@
 package server
 
 import (
-	"fmt"
 	"log"
 	"net"
 	"strconv"
@@ -88,7 +87,6 @@ func RunASyncTCPServer() error {
 		}
 
 		for i := 0; i < nevents; i++ {
-			fmt.Println("conn_clients", conn_clients)
 			//check if the socket itself is ready for an IO
 			if int(events[i].Fd) == serverFD {
 				//accept incoming request from a server

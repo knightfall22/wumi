@@ -2,7 +2,6 @@ package core
 
 import (
 	"log"
-	"time"
 )
 
 func expireSample() float32 {
@@ -11,13 +10,10 @@ func expireSample() float32 {
 
 	// assuming iteration of golang hash table is randomized
 	for key, obj := range store {
-		if obj.ExpiresAt != -1 {
-			limit--
-
-			if obj.ExpiresAt <= time.Now().UnixMilli() {
-				delete(store, key)
-				expiredCount++
-			}
+		limit--
+		if hasExpired(obj) {
+			delete(store, key)
+			expiredCount++
 		}
 
 		//once we hace iterated the keys that have expiration set
