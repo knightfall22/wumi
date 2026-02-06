@@ -3,7 +3,10 @@ package server
 import (
 	"log"
 	"net"
+	"os"
 	"strconv"
+	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -16,7 +19,37 @@ var conn_clients int
 var cronFrequency time.Duration = 1 * time.Second
 var lastCronExecTime time.Time = time.Now()
 
-func RunASyncTCPServer() error {
+const (
+	_ int32 = 1 << iota
+	EngineStatus_Waiting
+	EngineStatus_BUSY
+	EngineStatus_SHUTTING_DOWN
+)
+
+var eStatus = EngineStatus_Waiting
+
+func WaitForSignal(wg *sync.WaitGroup, sigs <-chan os.Signal) {
+	defer wg.Done()
+
+	<-sigs
+
+	//if server is busy continue to wait
+	for atomic.LoadInt32(&eStatus) == EngineStatus_BUSY {
+	}
+
+	atomic.StoreInt32(&eStatus, EngineStatus_SHUTTING_DOWN)
+
+	core.ShutDown()
+	os.Exit(0)
+
+}
+
+func RunASyncTCPServer(wg *sync.WaitGroup) error {
+	defer wg.Done()
+	defer func() {
+		atomic.StoreInt32(&eStatus, EngineStatus_SHUTTING_DOWN)
+	}()
+
 	address := net.JoinHostPort(config.Host, strconv.Itoa(config.Port))
 	log.Println("Starting asynchronous server on", address)
 
@@ -74,7 +107,7 @@ func RunASyncTCPServer() error {
 		return err
 	}
 
-	for {
+	for atomic.LoadInt32(&eStatus) != EngineStatus_SHUTTING_DOWN {
 		if time.Now().After(lastCronExecTime.Add(cronFrequency)) {
 			core.DeleteExpiredKeys()
 			lastCronExecTime = time.Now()
@@ -84,6 +117,13 @@ func RunASyncTCPServer() error {
 		nevents, err := syscall.EpollWait(epollFD, events[:], -1)
 		if err != nil {
 			continue
+		}
+
+		if !atomic.CompareAndSwapInt32(&eStatus, EngineStatus_Waiting, EngineStatus_BUSY) {
+			switch eStatus {
+			case EngineStatus_SHUTTING_DOWN:
+				return nil
+			}
 		}
 
 		for i := 0; i < nevents; i++ {
@@ -127,5 +167,9 @@ func RunASyncTCPServer() error {
 				response(cmds, comm)
 			}
 		}
+
+		atomic.StoreInt32(&eStatus, EngineStatus_Waiting)
 	}
+
+	return nil
 }

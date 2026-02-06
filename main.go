@@ -3,6 +3,10 @@ package main
 import (
 	"flag"
 	"log"
+	"os"
+	"os/signal"
+	"sync"
+	"syscall"
 
 	"github.com/knightfall22/wumi/config"
 	"github.com/knightfall22/wumi/server"
@@ -23,5 +27,14 @@ func main() {
 	setupFlags()
 	log.Println("server started")
 
-	server.RunASyncTCPServer()
+	var sigs chan os.Signal = make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go server.RunASyncTCPServer(&wg)
+	go server.WaitForSignal(&wg, sigs)
+
+	wg.Wait()
 }
