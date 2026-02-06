@@ -21,12 +21,15 @@ var lastCronExecTime time.Time = time.Now()
 
 const (
 	_ int32 = 1 << iota
-	EngineStatus_Waiting
+	EngineStatus_WAITING
 	EngineStatus_BUSY
 	EngineStatus_SHUTTING_DOWN
+	EngineStatus_TRANSACTION
 )
 
-var eStatus = EngineStatus_Waiting
+var eStatus = EngineStatus_WAITING
+
+var connectedClients = make(map[int]*core.Client)
 
 func WaitForSignal(wg *sync.WaitGroup, sigs <-chan os.Signal) {
 	defer wg.Done()
@@ -119,7 +122,7 @@ func RunASyncTCPServer(wg *sync.WaitGroup) error {
 			continue
 		}
 
-		if !atomic.CompareAndSwapInt32(&eStatus, EngineStatus_Waiting, EngineStatus_BUSY) {
+		if !atomic.CompareAndSwapInt32(&eStatus, EngineStatus_WAITING, EngineStatus_BUSY) {
 			switch eStatus {
 			case EngineStatus_SHUTTING_DOWN:
 				return nil
@@ -136,8 +139,7 @@ func RunASyncTCPServer(wg *sync.WaitGroup) error {
 					continue
 				}
 
-				//increase the number of concurrent clients
-				conn_clients++
+				connectedClients[fd] = core.NewClient(fd)
 				syscall.SetNonblock(fd, true)
 
 				// add this new tcp client to be monitored
@@ -150,8 +152,9 @@ func RunASyncTCPServer(wg *sync.WaitGroup) error {
 					log.Fatalln(err)
 				}
 			} else {
-				comm := core.FDComm{
-					Fd: int(events[i].Fd),
+				comm := connectedClients[int(events[i].Fd)]
+				if comm == nil {
+					continue
 				}
 
 				cmds, err := readCommands(comm)
@@ -160,7 +163,7 @@ func RunASyncTCPServer(wg *sync.WaitGroup) error {
 						log.Println("Error removing fd from epoll:", err)
 					}
 					syscall.Close(int(events[i].Fd))
-					conn_clients--
+					delete(connectedClients, int(events[i].Fd))
 					continue
 				}
 
@@ -168,7 +171,7 @@ func RunASyncTCPServer(wg *sync.WaitGroup) error {
 			}
 		}
 
-		atomic.StoreInt32(&eStatus, EngineStatus_Waiting)
+		atomic.StoreInt32(&eStatus, EngineStatus_WAITING)
 	}
 
 	return nil

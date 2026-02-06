@@ -4,17 +4,19 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"io"
 	"strconv"
 	"time"
 )
 
 var RESP_NIL []byte = []byte("$-1\r\n")
 var RESP_OK []byte = []byte("+OK\r\n")
+var RESP_QUEUED []byte = []byte("+QUEUED\r\n")
 var RESP_ZERO []byte = []byte(":0\r\n")
 var RESP_ONE []byte = []byte(":1\r\n")
 var RESP_MINUS_ONE []byte = []byte(":-1\r\n")
 var RESP_MINUS_TWO []byte = []byte(":-2\r\n")
+
+var txnCommands = map[string]bool{"EXEC": true, "DISCARD": true}
 
 func evalPING(args []string) []byte {
 	var b []byte
@@ -229,41 +231,78 @@ func evalSleep(args []string) []byte {
 	return RESP_OK
 }
 
-func EvalAndRespond(cmds RedisCmds, c io.ReadWriter) error {
+func evalMULTI() []byte {
+	return RESP_OK
+}
+
+func executeCommad(cmd *RedisCmd, c *Client) []byte {
+	switch cmd.Cmd {
+	case "PING":
+		return evalPING(cmd.Args)
+	case "SET":
+		return evalSET(cmd.Args)
+	case "GET":
+		return evalGet(cmd.Args)
+	case "TTL":
+		return evalTTL(cmd.Args)
+	case "DEL":
+		return evalDel(cmd.Args)
+	case "EX", "EXPIRE":
+		return evalExpire(cmd.Args)
+	case "BGREWRITEAOF":
+		return evalBGREWRITEAOF()
+	case "INCR":
+		return evalINCR(cmd.Args)
+	case "INFO":
+		return evalINFO()
+	case "CLIENT":
+		return evalCLIENT()
+	case "LATENCY":
+		return evalLATENCY()
+	case "SLEEP":
+		return evalSleep(cmd.Args)
+	case "MULTI":
+		c.TxnBegin()
+		return evalMULTI()
+	case "EXEC":
+		if !c.isTxn {
+			return Encode(errors.New("ERR EXEC without MULTI"), false)
+		}
+
+		return c.TxnExec()
+	case "DISCARD":
+		if !c.isTxn {
+			return Encode(errors.New("ERR DISCARD without MULTI"), false)
+		}
+
+		c.TxnDiscard()
+		return RESP_OK
+	default:
+		return evalPING(cmd.Args)
+	}
+}
+
+func executeCommandToBuffer(cmd *RedisCmd, buf *bytes.Buffer, c *Client) {
+	buf.Write(executeCommad(cmd, c))
+}
+
+func EvalAndRespond(cmds RedisCmds, c *Client) {
 	var response []byte
 	buf := bytes.NewBuffer(response)
 
 	for _, cmd := range cmds {
-		switch cmd.Cmd {
-		case "PING":
-			buf.Write(evalPING(cmd.Args))
-		case "SET":
-			buf.Write(evalSET(cmd.Args))
-		case "GET":
-			buf.Write(evalGet(cmd.Args))
-		case "TTL":
-			buf.Write(evalTTL(cmd.Args))
-		case "DEL":
-			buf.Write(evalDel(cmd.Args))
-		case "EX", "EXPIRE":
-			buf.Write(evalExpire(cmd.Args))
-		case "BGREWRITEAOF":
-			buf.Write(evalBGREWRITEAOF())
-		case "INCR":
-			buf.Write(evalINCR(cmd.Args))
-		case "INFO":
-			buf.Write(evalINFO())
-		case "CLIENT":
-			buf.Write(evalCLIENT())
-		case "LATENCY":
-			buf.Write(evalLATENCY())
-		case "SLEEP":
-			buf.Write(evalSleep(cmd.Args))
-		default:
-			buf.Write(evalPING(cmd.Args))
+		if !c.isTxn {
+			executeCommandToBuffer(cmd, buf, c)
+			continue
+		}
+
+		if !txnCommands[cmd.Cmd] {
+			c.TxnQueue(cmd)
+			buf.Write(RESP_QUEUED)
+		} else {
+			executeCommandToBuffer(cmd, buf, c)
 		}
 	}
 
-	_, err := c.Write(buf.Bytes())
-	return err
+	c.Write(buf.Bytes())
 }

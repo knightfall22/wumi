@@ -1,58 +1,53 @@
 package server
 
 import (
-	"fmt"
 	"io"
-	"log"
-	"net"
-	"strconv"
 	"strings"
 
-	"github.com/knightfall22/wumi/config"
 	"github.com/knightfall22/wumi/core"
 )
 
-func RunSyncTCPServer() {
-	address := net.JoinHostPort(config.Host, strconv.Itoa(config.Port))
-	log.Println("Starting synchronous server on", address)
+// func RunSyncTCPServer() {
+// 	address := net.JoinHostPort(config.Host, strconv.Itoa(config.Port))
+// 	log.Println("Starting synchronous server on", address)
 
-	var con_client = 0
+// 	var con_client = 0
 
-	//listening to configed host:port
-	lnr, err := net.Listen("tcp", address)
-	if err != nil {
-		panic(err)
-	}
+// 	//listening to configed host:port
+// 	lnr, err := net.Listen("tcp", address)
+// 	if err != nil {
+// 		panic(err)
+// 	}
 
-	for {
-		//blocking call waiting for new client to connect
-		c, err := lnr.Accept()
-		if err != nil {
-			panic(err)
-		}
+// 	for {
+// 		//blocking call waiting for new client to connect
+// 		c, err := lnr.Accept()
+// 		if err != nil {
+// 			panic(err)
+// 		}
 
-		//increment the number of concurrent clients
-		con_client++
-		log.Printf("client connected with remote address: %s, concurrent clients: %d\n", c.RemoteAddr().String(), con_client)
+// 		//increment the number of concurrent clients
+// 		con_client++
+// 		log.Printf("client connected with remote address: %s, concurrent clients: %d\n", c.RemoteAddr().String(), con_client)
 
-		for {
-			cmds, err := readCommands(c)
-			if err != nil {
-				c.Close()
-				con_client--
-				log.Printf("client disconnected remote address: %s, concurrent clients: %d\n", c.RemoteAddr().String(), con_client)
+// 		for {
+// 			cmds, err := readCommands(c)
+// 			if err != nil {
+// 				c.Close()
+// 				con_client--
+// 				log.Printf("client disconnected remote address: %s, concurrent clients: %d\n", c.RemoteAddr().String(), con_client)
 
-				if err == io.EOF {
-					break
-				}
-				log.Println("err", err)
-			}
+// 				if err == io.EOF {
+// 					break
+// 				}
+// 				log.Println("err", err)
+// 			}
 
-			log.Println("command", cmds)
-			response(cmds, c)
-		}
-	}
-}
+// 			log.Println("command", cmds)
+// 			response(cmds, c)
+// 		}
+// 	}
+// }
 
 func readCommands(c io.ReadWriter) (core.RedisCmds, error) {
 	buf := make([]byte, 521)
@@ -95,11 +90,11 @@ func toArrayString(value []any) ([]string, error) {
 	return stringValue, nil
 }
 
-func response(cmds core.RedisCmds, c io.ReadWriter) {
+func response(cmds core.RedisCmds, c *core.Client) {
 	core.EvalAndRespond(cmds, c)
 }
 
-func respondError(err error, c io.ReadWriter) {
-	log.Println("error", err)
-	fmt.Fprintf(c, "-%s\r\n", err)
-}
+// func respondError(err error, c io.ReadWriter) {
+// 	log.Println("error", err)
+// 	fmt.Fprintf(c, "-%s\r\n", err)
+// }
